@@ -9,11 +9,12 @@ class basic_G(nn.module):
     '''
     def __init__(self, in_dim, h_dim, device=t.device('cpu')):
         super(self,basic_G).__init__()
-        self.embedding = nn.Linear(in_dim, h_dim)
-        self.lstm = nn.LSTM(h_dim,in_dim,num_layers=4, bidirectional=True)
+        self.embedding = nn.Linear(in_dim*2, h_dim)
+        self.lstm = nn.LSTM(h_dim,h_dim,num_layers=4)
+        self.out = nn.Linear(h_dim,in_dim)
     
     def forward(self, x):
-        return self.lstm(self.embedding(x))
+        return self.out(self.lstm(self.embedding(x)))
     
 class basic_D(nn.module):
     '''
@@ -21,17 +22,17 @@ class basic_D(nn.module):
     '''
     def __init__(self, in_dim, h_dim):
         super(self,basic_D).__init__()
-        self.LSTM_block = nn.LSTM(in_dim, h_dim, num_layers=4, bidirectional=True)
-        self.linear = nn.Linear(in_dim, in_dim)
+        self.LSTM_block = nn.LSTM(in_dim, h_dim, num_layers=4,bidirectional=True)
+        self.linear = nn.Linear(h_dim, in_dim)
 
     def forward(self, x):
-        return F.relu(self.linear(self.lstm(x)))
+        return F.sigmoid(self.linear(self.lstm(x)))
     
 class WGAN():
 
     def __init__(self, in_dim):
-        self._G = basic_G(in_dim*2)
-        self._D = basic_D(in_dim)
+        self._G = basic_G(in_dim, in_dim)
+        self._D = basic_D(in_dim, in_dim)
         self._optim_G = t.optim.Adam(self.G.parameters(), lr=0.001, betas=(0.5,0.999))
         self._optim_D = t.optim.Adam(self.D.parameters(), lr=0.001, betas=(0.5,0.999))
 
@@ -88,6 +89,25 @@ class WGAN():
         gradients = gradients.view(gradients.size(0), -1)
         gradient_penalty = (((gradients**2).sum()**0.5 - 1)**2).mean()
         return gradient_penalty
+    
+    def train_one_epoch(self, training_loader: t.utils.data.DataLoader):
+        optim_G, optim_D = self.optimizers
+        loss_G_avg = 0
+        for i, (x,m) in training_loader:
+            z = t.normal(0,1,size=x.shape)
+            optim_G.zero_grad()
+            loss_G = self.loss_G(x,m,z)
+            loss_G.backwards()
+            loss_G_avg = loss_G_avg+loss_G
+        loss_D_avg = 0
+        for n in range(5):
+            for j, (x,m) in training_loader:
+                z = t.normal(0,1,size=x.shape)
+                optim_D.zero_grad()
+                loss_D = self.loss_D(x,m,z)
+                loss_D.backward()
+                loss_D_avg = loss_D_avg+loss_D
+        return loss_G_avg / i, loss_D_avg / (j*5)
         
 
 
